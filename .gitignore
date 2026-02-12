@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Hydra
+.hydra/
+outputs/
+multirun/
+
+# Data & Results
+data/
+results/
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv
+env/
+venv/

@@ -1,0 +1,26 @@
+# Default configuration for LLM OptiBench
+# Override model by using: python main.py --model tinyllama|phi2|mistral
+
+model:
+  name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"  # Default
+  device: "cuda"
+  max_length: 512
+
+experiment:
+  batch_size: 2
+  dataset_subset_size: 100
+  seed: 42
+
+optimization:
+  # Quantization settings
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "float16"
+
+  # Pruning settings
+  pruning_amount: 0.2
+  pruning_method: "l1_unstructured"
+
+paths:
+  output_dir: "results"
+  data_dir: "data"
