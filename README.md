@@ -1,4 +1,4 @@
-# LLM OptiBench-7B
+# LLM OptiBench
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
