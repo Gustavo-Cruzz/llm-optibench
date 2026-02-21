@@ -19,3 +19,4 @@ jupyter>=1.0.0
 pytest>=7.0.0
 matplotlib>=3.8.0
 seaborn
+mlflow>=2.10.0

@@ -2,7 +2,7 @@
 # Override model by using: python main.py --model tinyllama|phi2|mistral
 
 model:
-  name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"  # Default
+  name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0" # Default
   device: "cuda"
   max_length: 512
 
@@ -24,3 +24,8 @@ optimization:
 paths:
   output_dir: "results"
   data_dir: "data"
+
+tracking:
+  use_mlflow: true
+  experiment_name: "LLM_OptiBench"
+  tracking_uri: "./mlruns"

@@ -18,3 +18,5 @@ results/
 .venv
 env/
 venv/
+.venv
+.python-version

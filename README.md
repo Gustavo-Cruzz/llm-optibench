@@ -7,17 +7,18 @@ A production-grade Python pipeline designed to benchmark Open Source LLMs (up to
 
 ## Features
 
-*   **Model Support**: `TinyLlama-1.1B` (default), `Phi-2`, `Mistral-7B-v0.1`.
-*   **Dataset**: Automated handling of SQuAD v2 validation set.
-*   **Optimization Techniques**:
-    *   **Baseline**: FP16 (Half Precision).
-    *   **Quantization**: 4-bit Normal Float (NF4) via QLoRA config (bitsandbytes).
-    *   **Pruning**: Unstructured magnitude pruning (20-30% sparsity).
-*   **Metrics**: F1 Score, Exact Match (EM), Latency (tok/s), Peak VRAM usage, and Model Size.
+- **Model Support**: `TinyLlama-1.1B` (default), `Phi-2`, `Mistral-7B-v0.1`.
+- **Dataset**: Automated handling of SQuAD v2 validation set.
+- **Optimization Techniques**:
+  - **Baseline**: FP16 (Half Precision).
+  - **Quantization**: 4-bit Normal Float (NF4) via QLoRA config (bitsandbytes).
+  - **Pruning**: Unstructured magnitude pruning (20-30% sparsity).
+- **Metrics**: F1 Score, Exact Match (EM), Latency (tok/s), Peak VRAM usage, and Model Size.
 
 ## Installation
 
 1.  Clone the repository:
+
     ```bash
     git clone https://github.com/yourusername/llm-optibench.git
     cd llm-optibench
@@ -44,18 +45,18 @@ You can override configuration parameters via command line arguments.
 
 **Select a Model:**
 
-*   **TinyLlama-1.1B (Default)** - Best for 6GB VRAM:
-    ```bash
-    python main.py --model tinyllama
-    ```
-*   **Phi-2 (2.7B)** - Possible on 6GB (Quantized) / 8GB+:
-    ```bash
-    python main.py --model phi2
-    ```
-*   **Mistral-7B** - Requires 12GB+ VRAM:
-    ```bash
-    python main.py --model mistral
-    ```
+- **TinyLlama-1.1B (Default)** - Best for 6GB VRAM:
+  ```bash
+  python main.py --model tinyllama
+  ```
+- **Phi-2 (2.7B)** - Possible on 6GB (Quantized) / 8GB+:
+  ```bash
+  python main.py --model phi2
+  ```
+- **Mistral-7B** - Requires 12GB+ VRAM:
+  ```bash
+  python main.py --model mistral
+  ```
 
 **Other Overrides:**
 
@@ -70,12 +71,26 @@ python main.py --pruning 0.3
 python main.py --device cpu
 ```
 
+### Experiment Tracking (MLflow)
+
+This project uses **MLflow** to track experiments, parameters, and metrics automatically. By default, runs are saved locally in the `./mlruns` directory.
+
+To view the results in your browser:
+
+```bash
+mlflow ui
+```
+
+Then open [http://127.0.0.1:5000](http://127.0.0.1:5000) to compare F1 scores, latencies, and VRAM usage across the Baseline, Quantization, and Pruning runs.
+
 ## Optimization Methods
 
 ### Quantization (4-bit NF4)
+
 We utilize `bitsandbytes` to load models in 4-bit Normal Float (NF4) precision. NF4 maps each weight to one of 16 discrete values drawn from a normal distribution, which is information-theoretically optimal for normally-distributed neural network weights (Dettmers et al., 2023). This reduces VRAM usage by approximately 75% compared to FP16.
 
 ### Pruning (Unstructured)
+
 We apply unstructured L1 magnitude pruning to all `nn.Linear` layers (excluding `lm_head`) using `torch.nn.utils.prune`. A configurable fraction (default: 20%) of the lowest-magnitude weights are zeroed, and the pruning mask is made permanent via `prune.remove()`.
 
 ### Note on Hybrid (Quantization + Pruning) — Excluded
