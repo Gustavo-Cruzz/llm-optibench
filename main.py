@@ -65,6 +65,8 @@ def load_config(args: argparse.Namespace) -> DictConfig:
         base.optimization.pruning_amount = args.pruning
     if args.device is not None:
         base.model.device = args.device
+    if args.export_models:
+        base.paths.export_models = True
 
     return base
 
@@ -111,6 +113,11 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Device override, e.g. 'cpu' or 'cuda' (default: from config)",
+    )
+    parser.add_argument(
+        "--export_models",
+        action="store_true",
+        help="Export models to disk after evaluating (default: false)",
     )
     return parser.parse_args()
 
@@ -178,6 +185,13 @@ def main() -> None:
                 })
             results.append(metrics)
 
+        if cfg.paths.get("export_models", False):
+            export_path = os.path.join(cfg.paths.get("export_dir", "exports"), f"{args.model}_baseline")
+            logger.info(f"Saving Baseline model to {export_path}")
+            os.makedirs(export_path, exist_ok=True)
+            model.save_pretrained(export_path)
+            optimizer.tokenizer.save_pretrained(export_path)
+
         del model, evaluator, optimizer
         cleanup_gpu()
 
@@ -200,6 +214,17 @@ def main() -> None:
                 })
             results.append(metrics)
 
+        if cfg.paths.get("export_models", False):
+            export_path = os.path.join(cfg.paths.get("export_dir", "exports"), f"{args.model}_quantized_4bit")
+            logger.info(f"Attempting to save Quantized model to {export_path}")
+            os.makedirs(export_path, exist_ok=True)
+            try:
+                # 4-bit models in transformers might have limitations on direct save without PEFT
+                model.save_pretrained(export_path)
+                optimizer.tokenizer.save_pretrained(export_path)
+            except Exception as e:
+                logger.warning(f"Failed to save 4-bit quantized model directly: {e}")
+
         del model, evaluator, optimizer
         cleanup_gpu()
 
@@ -208,7 +233,7 @@ def main() -> None:
         cleanup_gpu()
         optimizer = ModelOptimizer(cfg)
         model = optimizer.load_baseline()
-        model = optimizer.apply_pruning(model)
+        model = optimizer.apply_pruning(model, dataset=dataset)
         evaluator = Evaluator(cfg, optimizer.tokenizer)
         
         with mlflow.start_run(run_name="Pruned_Unstructured", nested=True) if use_mlflow else nullcontext():
@@ -222,6 +247,13 @@ def main() -> None:
                     "model_size_gb": metrics["Model Size (GB)"]
                 })
             results.append(metrics)
+
+        if cfg.paths.get("export_models", False):
+            export_path = os.path.join(cfg.paths.get("export_dir", "exports"), f"{args.model}_pruned")
+            logger.info(f"Saving Pruned model to {export_path}")
+            os.makedirs(export_path, exist_ok=True)
+            model.save_pretrained(export_path)
+            optimizer.tokenizer.save_pretrained(export_path)
 
         del model, evaluator, optimizer
         cleanup_gpu()

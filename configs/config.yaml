@@ -19,11 +19,14 @@ optimization:
 
   # Pruning settings
   pruning_amount: 0.2
-  pruning_method: "l1_unstructured"
+  pruning_method: "wanda"
+  wanda_calibration_samples: 128
 
 paths:
   output_dir: "results"
   data_dir: "data"
+  export_models: false
+  export_dir: "exports"
 
 tracking:
   use_mlflow: true

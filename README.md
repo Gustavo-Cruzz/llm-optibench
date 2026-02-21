@@ -61,6 +61,9 @@ You can override configuration parameters via command line arguments.
 **Other Overrides:**
 
 ```bash
+# Save models after the run
+python main.py --export_models
+
 # Evaluate on 50 samples only
 python main.py --subset 50
 

@@ -4,6 +4,9 @@ import torch.nn.utils.prune as prune
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from omegaconf import DictConfig
 from typing import Optional, Tuple
+from datasets import Dataset
+
+from src.wanda import apply_wanda_pruning
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +60,13 @@ class ModelOptimizer:
         )
         return model
 
-    def apply_pruning(self, model: AutoModelForCausalLM) -> AutoModelForCausalLM:
+    def apply_pruning(self, model: AutoModelForCausalLM, dataset: Optional[Dataset] = None) -> AutoModelForCausalLM:
         """
-        Applies unstructured magnitude pruning to Linear layers.
+        Applies either Wanda or unstructured magnitude pruning.
         
         Args:
             model: The PyTorch model to prune.
+            dataset: Calibration dataset for Wanda pruning.
             
         Returns:
             Pruned model.
@@ -70,6 +74,20 @@ class ModelOptimizer:
         amount = self.cfg.optimization.pruning_amount
         method = self.cfg.optimization.pruning_method
         logger.info(f"Applying {method} pruning with amount={amount}...")
+
+        if method == "wanda":
+            if dataset is None:
+                raise ValueError("Wanda pruning requires a calibration dataset.")
+            calibration_samples = self.cfg.optimization.get("wanda_calibration_samples", 128)
+            model = apply_wanda_pruning(
+                model=model, 
+                dataloader=dataset, 
+                tokenizer=self.tokenizer, 
+                device=self.device, 
+                sparsity_ratio=amount, 
+                calibration_samples=calibration_samples
+            )
+            return model
 
         # Prune only linear layers 
         parameters_to_prune = []
