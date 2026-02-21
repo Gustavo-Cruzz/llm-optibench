@@ -86,6 +86,14 @@ mlflow ui
 
 Then open [http://127.0.0.1:5000](http://127.0.0.1:5000) to compare F1 scores, latencies, and VRAM usage across the Baseline, Quantization, and Pruning runs.
 
+### Jupyter Notebook Analysis
+
+We also auto-generate rich Seaborn visualizations pulling directly from the MLflow API.
+
+1. Install Jupyter (`pip install jupyter seaborn`).
+2. Run `jupyter notebook notebooks/analyze_results.ipynb`.
+3. View high-quality bar charts and trade-off scatter plots (F1 vs Latency vs VRAM).
+
 ## Optimization Methods
 
 ### Quantization (4-bit NF4)
