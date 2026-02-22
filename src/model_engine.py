@@ -6,6 +6,11 @@ from omegaconf import DictConfig
 from typing import Optional, Tuple
 from datasets import Dataset
 
+try:
+    from awq import AutoAWQForCausalLM
+except ImportError:
+    AutoAWQForCausalLM = None
+
 from src.wanda import apply_wanda_pruning
 
 logger = logging.getLogger(__name__)
@@ -40,25 +45,63 @@ class ModelOptimizer:
         )
         return model
 
-    def apply_quantization(self) -> AutoModelForCausalLM:
+    def apply_quantization(self, dataset: Optional[Dataset] = None) -> AutoModelForCausalLM:
         """
-        Loads the model with 4-bit NF4 quantization using bitsandbytes.
+        Loads the model with either 4-bit NF4 quantization using bitsandbytes, or AWQ.
         """
-        logger.info(f"Loading quantized model: {self.model_name} (4-bit NF4)")
+        quant_method = self.cfg.optimization.get("quantization_method", "bitsandbytes")
         
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=self.cfg.optimization.load_in_4bit,
-            bnb_4bit_quant_type=self.cfg.optimization.bnb_4bit_quant_type,
-            bnb_4bit_compute_dtype=getattr(torch, self.cfg.optimization.bnb_4bit_compute_dtype),
-            bnb_4bit_use_double_quant=True,
-        )
+        if quant_method == "awq":
+            if AutoAWQForCausalLM is None:
+                raise ImportError("autoawq is not installed. Please install it to use AWQ quantization.")
+            if dataset is None:
+                raise ValueError("AWQ quantization requires a calibration dataset.")
+                
+            logger.info(f"Applying AWQ Quantization to model: {self.model_name}")
+            
+            # Prepare calibration data
+            calib_samples = self.cfg.optimization.get("awq_calibration_samples", 128)
+            texts = []
+            for i, example in enumerate(dataset):
+                if i >= calib_samples:
+                    break
+                texts.append(example["context"] + " " + example["question"])
 
-        model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            quantization_config=bnb_config,
-            device_map=self.device,
-        )
-        return model
+            # Load model directly via AWQ
+            model = AutoAWQForCausalLM.from_pretrained(
+                self.model_name,
+                **{"low_cpu_mem_usage": True, "device_map": self.device}
+            )
+
+            quant_config = {
+                "zero_point": True, 
+                "q_group_size": 128, 
+                "w_bit": 4, 
+                "version": "GEMM"
+            }
+            
+            logger.info("Running AWQ calibration (this may take a few minutes)...")
+            model.quantize(self.tokenizer, quant_config=quant_config, calib_data=texts)
+            
+            return model
+            
+        else:
+            # Fallback to bitsandbytes NF4
+            logger.info(f"Loading quantized model: {self.model_name} (4-bit NF4 via bitsandbytes)")
+            
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=self.cfg.optimization.load_in_4bit,
+                bnb_4bit_quant_type=self.cfg.optimization.bnb_4bit_quant_type,
+                bnb_4bit_compute_dtype=getattr(torch, self.cfg.optimization.bnb_4bit_compute_dtype),
+                bnb_4bit_use_double_quant=True,
+            )
+
+            model = AutoModelForCausalLM.from_pretrained(
+                self.model_name,
+                quantization_config=bnb_config,
+                device_map=self.device,
+            )
+            return model
 
     def apply_pruning(self, model: AutoModelForCausalLM, dataset: Optional[Dataset] = None) -> AutoModelForCausalLM:
         """

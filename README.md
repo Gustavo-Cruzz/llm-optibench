@@ -13,8 +13,11 @@ A production-grade Python pipeline designed to benchmark Open Source LLMs (up to
   - `gsm8k`: Mathematical Reasoning.
 - **Optimization Techniques**:
   - **Baseline**: FP16 (Half Precision).
-  - **Quantization**: 4-bit Normal Float (NF4) via QLoRA config (bitsandbytes).
-  - **Pruning**: Unstructured magnitude pruning (20-30% sparsity).
+  - **Quantization**:
+    - **BitsAndBytes (4-bit NF4)**: Optimized for fast loading and low memory usage.
+    - **AWQ (Activation-aware Weight Quantization)**: 4-bit quantization optimized for fast inference throughput natively on GPU.
+  - **Pruning**: Unstructured magnitude pruning or Wanda (activation-based).
+  - **Recovery Fine-tuning**: Optional LoRA (Low-Rank Adaptation) step post-pruning to recover accuracy drops before evaluation.
 - **Metrics**: F1 Score, Exact Match (EM), Latency (tok/s), Peak VRAM usage, and Model Size.
 
 ## Installation
@@ -69,6 +72,9 @@ python main.py --export_models
 # Run mathematical reasoning benchmark instead of QA
 python main.py --dataset gsm8k
 
+# Run with LoRA recovery fine-tuning after pruning
+python main.py --finetune
+
 # Evaluate on 50 samples only
 python main.py --subset 50
 
@@ -101,13 +107,35 @@ We also auto-generate rich Seaborn visualizations pulling directly from the MLfl
 
 ## Optimization Methods
 
-### Quantization (4-bit NF4)
+### Quantization
 
-We utilize `bitsandbytes` to load models in 4-bit Normal Float (NF4) precision. NF4 maps each weight to one of 16 discrete values drawn from a normal distribution, which is information-theoretically optimal for normally-distributed neural network weights (Dettmers et al., 2023). This reduces VRAM usage by approximately 75% compared to FP16.
+We support two distinct 4-bit quantization strategies:
+
+#### 1. BitsAndBytes (4-bit NF4)
+
+Utilizamos a biblioteca `bitsandbytes` para carregar pesos no formato _Normal Float 4_ (NF4). Este método é ótimo para reduzir o consumo de VRAM de forma rápida e prática no carregamento (`load_time`), mas a inferência continua exigindo desquantização para FP16 nos cálculos matriz-vertor, o que não proporciona grandes ganhos de velocidade (tokens/segundo).
+
+#### 2. AWQ (Activation-aware Weight Quantization)
+
+Para ganhos reais de **Throughput/Velocidade na GPU**, implementamos o `autoawq`. Diferente do NF4, o AWQ usa dados reais de ativação (um subconjunto de calibração do dataset selecionado) para entender quais pesos são mais importantes. Ele quantiza e realiza as operações GEMM nativamente na placa de vídeo, resultando em modelos muito mais rápidos sem perder a precisão do FP16 original.
+
+Configurável via `configs/config.yaml`:
+
+```yaml
+optimization:
+  quantization_method: "awq" # ou "bitsandbytes"
+```
 
 ### Pruning (Unstructured)
 
-We apply unstructured L1 magnitude pruning to all `nn.Linear` layers (excluding `lm_head`) using `torch.nn.utils.prune`. A configurable fraction (default: 20%) of the lowest-magnitude weights are zeroed, and the pruning mask is made permanent via `prune.remove()`.
+We apply unstructured pruning (either Magnitude-based or Wanda) to `nn.Linear` layers (excluding `lm_head`). A configurable fraction (default: 20%) of weights are zeroed, and the mask is made permanent via `prune.remove()`.
+
+- **Magnitude**: Zeroes the lowest-magnitude weights.
+- **Wanda**: Pruning based on weight magnitude multiplied by input activation norms, proven to be highly effective for LLMs.
+
+### Recovery Fine-Tuning (LoRA)
+
+Pruning often degrades performance. We mitigate this by supporting an optional **Recovery Fine-Tuning** step. When enabled (via `--finetune`), the pruned model is wrapped with a LoRA adapter (`peft`) and trained briefly (using `SFTTrainer` from `trl`) on the same dataset used for evaluation. This allows the network to adjust its remaining weights around the "pruned holes", recovering significant accuracy before final metrics are calculated.
 
 ### Note on Hybrid (Quantization + Pruning) — Excluded
 

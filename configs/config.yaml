@@ -14,6 +14,9 @@ experiment:
 
 optimization:
   # Quantization settings
+  quantization_method: "awq" # "bitsandbytes" or "awq"
+  awq_calibration_samples: 128
+
   load_in_4bit: true
   bnb_4bit_quant_type: "nf4"
   bnb_4bit_compute_dtype: "float16"
@@ -22,6 +25,15 @@ optimization:
   pruning_amount: 0.2
   pruning_method: "wanda"
   wanda_calibration_samples: 128
+
+  # Fine-tuning after pruning
+  finetune_after_pruning: false
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  finetune_epochs: 1
+  finetune_learning_rate: 2e-4
+  finetune_batch_size: 2
 
 paths:
   output_dir: "results"

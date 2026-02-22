@@ -61,6 +61,8 @@ def load_config(args: argparse.Namespace) -> DictConfig:
         base.experiment.dataset_subset_size = args.subset
     if args.dataset is not None:
         base.experiment.dataset_name = args.dataset
+    if args.finetune:
+        base.optimization.finetune_after_pruning = True
     if args.batch is not None:
         base.experiment.batch_size = args.batch
     if args.pruning is not None:
@@ -127,6 +129,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Dataset override, e.g. 'squad_v2' or 'gsm8k' (default: from config)",
     )
+    parser.add_argument(
+        "--finetune",
+        action="store_true",
+        help="Run LoRA recovery fine-tuning after pruning (default: false)",
+    )
     return parser.parse_args()
 
 
@@ -172,6 +179,8 @@ def main() -> None:
                 "batch_size": cfg.experiment.batch_size,
                 "pruning_amount": cfg.optimization.get("pruning_amount", 0.0),
                 "pruning_method": cfg.optimization.get("pruning_method", "none"),
+                "finetuned_after_pruning": cfg.optimization.get("finetune_after_pruning", False),
+                "quantization_method": cfg.optimization.get("quantization_method", "bitsandbytes"),
                 "quant_type": cfg.optimization.get("bnb_4bit_quant_type", "none")
             })
 
@@ -199,15 +208,15 @@ def main() -> None:
         del model, evaluator, optimizer
         cleanup_gpu()
 
-        # ── RUN 2: QUANTIZATION (4-bit NF4) ─────────────────────────────────────
-        logger.info("=== RUN 2: QUANTIZATION (4-bit NF4) ===")
+        # ── RUN 2: QUANTIZATION ─────────────────────────────────────
+        logger.info(f"=== RUN 2: QUANTIZATION ({cfg.optimization.get('quantization_method', 'bitsandbytes')}) ===")
         cleanup_gpu()
         optimizer = ModelOptimizer(cfg)
-        model = optimizer.apply_quantization()
+        model = optimizer.apply_quantization(dataset=dataset)
         evaluator = Evaluator(cfg, optimizer.tokenizer, handler)
         
-        with mlflow.start_run(run_name="Quantized_4bit_NF4", nested=True) if use_mlflow else nullcontext():
-            metrics = evaluator.run_inference(model, dataset, "Quantized (4-bit NF4)")
+        with mlflow.start_run(run_name=f"Quantized_{cfg.optimization.get('quantization_method', 'bitsandbytes')}", nested=True) if use_mlflow else nullcontext():
+            metrics = evaluator.run_inference(model, dataset, f"Quantized ({cfg.optimization.get('quantization_method', 'bitsandbytes')})")
             if use_mlflow:
                 mlflow.log_metrics({k: v for k, v in metrics.items() if isinstance(v, (int, float))})
             results.append(metrics)
@@ -232,10 +241,20 @@ def main() -> None:
         optimizer = ModelOptimizer(cfg)
         model = optimizer.load_baseline()
         model = optimizer.apply_pruning(model, dataset=dataset)
+        
+        # Optional: Recovery Fine-Tuning
+        if cfg.optimization.get("finetune_after_pruning", False):
+            from src.finetune import Finetuner
+            logger.info("=== RECOVERY FINE-TUNING (LoRA) ===")
+            finetuner = Finetuner(cfg, optimizer.tokenizer, handler)
+            model = finetuner.train(model, dataset)
+            
         evaluator = Evaluator(cfg, optimizer.tokenizer, handler)
         
-        with mlflow.start_run(run_name="Pruned_Unstructured", nested=True) if use_mlflow else nullcontext():
-            metrics = evaluator.run_inference(model, dataset, "Pruned (Unstructured)")
+        run_name_prefix = "Pruned_Finetuned" if cfg.optimization.get("finetune_after_pruning", False) else "Pruned_Unstructured"
+        with mlflow.start_run(run_name=run_name_prefix, nested=True) if use_mlflow else nullcontext():
+            display_name = "Pruned + LoRA" if cfg.optimization.get("finetune_after_pruning", False) else "Pruned (Unstructured)"
+            metrics = evaluator.run_inference(model, dataset, display_name)
             if use_mlflow:
                 mlflow.log_metrics({k: v for k, v in metrics.items() if isinstance(v, (int, float))})
             results.append(metrics)
