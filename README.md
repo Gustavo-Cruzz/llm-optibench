@@ -8,7 +8,9 @@ A production-grade Python pipeline designed to benchmark Open Source LLMs (up to
 ## Features
 
 - **Model Support**: `TinyLlama-1.1B` (default), `Phi-2`, `Mistral-7B-v0.1`.
-- **Dataset**: Automated handling of SQuAD v2 validation set.
+- **Datasets Supported**:
+  - `squad_v2`: Extractive Question Answering.
+  - `gsm8k`: Mathematical Reasoning.
 - **Optimization Techniques**:
   - **Baseline**: FP16 (Half Precision).
   - **Quantization**: 4-bit Normal Float (NF4) via QLoRA config (bitsandbytes).
@@ -63,6 +65,9 @@ You can override configuration parameters via command line arguments.
 ```bash
 # Save models after the run
 python main.py --export_models
+
+# Run mathematical reasoning benchmark instead of QA
+python main.py --dataset gsm8k
 
 # Evaluate on 50 samples only
 python main.py --subset 50

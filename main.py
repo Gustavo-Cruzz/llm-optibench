@@ -24,7 +24,7 @@ import yaml
 import mlflow
 from omegaconf import DictConfig, OmegaConf
 
-from src.data_loader import QADataloader
+from src.data_loader import get_dataset_handler
 from src.evaluation import Evaluator
 from src.model_engine import ModelOptimizer
 from src.utils import set_seed, setup_logging
@@ -59,6 +59,8 @@ def load_config(args: argparse.Namespace) -> DictConfig:
     # 3. Apply any CLI-level scalar overrides
     if args.subset is not None:
         base.experiment.dataset_subset_size = args.subset
+    if args.dataset is not None:
+        base.experiment.dataset_name = args.dataset
     if args.batch is not None:
         base.experiment.batch_size = args.batch
     if args.pruning is not None:
@@ -119,6 +121,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Export models to disk after evaluating (default: false)",
     )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default=None,
+        help="Dataset override, e.g. 'squad_v2' or 'gsm8k' (default: from config)",
+    )
     return parser.parse_args()
 
 
@@ -133,8 +141,8 @@ def main() -> None:
     )
 
     # 1. Load Data
-    data_loader = QADataloader(cfg)
-    dataset = data_loader.load_data()
+    handler = get_dataset_handler(cfg)
+    dataset = handler.load_data()
 
     results: list[dict] = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -158,6 +166,7 @@ def main() -> None:
             # Log key parameters
             mlflow.log_params({
                 "model_name": cfg.model.name,
+                "dataset_name": cfg.experiment.get("dataset_name", "squad_v2"),
                 "device": cfg.model.device,
                 "dataset_subset_size": cfg.experiment.get("dataset_subset_size", "all"),
                 "batch_size": cfg.experiment.batch_size,
@@ -171,18 +180,13 @@ def main() -> None:
         cleanup_gpu()
         optimizer = ModelOptimizer(cfg)
         model = optimizer.load_baseline()
-        evaluator = Evaluator(cfg, optimizer.tokenizer)
+        evaluator = Evaluator(cfg, optimizer.tokenizer, handler)
         
         with mlflow.start_run(run_name="Baseline_FP16", nested=True) if use_mlflow else nullcontext():
             metrics = evaluator.run_inference(model, dataset, "Baseline (FP16)")
             if use_mlflow:
-                mlflow.log_metrics({
-                    "f1_score": metrics["F1 Score"],
-                    "exact_match": metrics["Exact Match (EM)"],
-                    "avg_latency": metrics["Avg Latency (tok/s)"],
-                    "peak_vram_gb": metrics["Peak VRAM (GB)"],
-                    "model_size_gb": metrics["Model Size (GB)"]
-                })
+                # Dynamically log all numeric metrics returned
+                mlflow.log_metrics({k: v for k, v in metrics.items() if isinstance(v, (int, float))})
             results.append(metrics)
 
         if cfg.paths.get("export_models", False):
@@ -200,18 +204,12 @@ def main() -> None:
         cleanup_gpu()
         optimizer = ModelOptimizer(cfg)
         model = optimizer.apply_quantization()
-        evaluator = Evaluator(cfg, optimizer.tokenizer)
+        evaluator = Evaluator(cfg, optimizer.tokenizer, handler)
         
         with mlflow.start_run(run_name="Quantized_4bit_NF4", nested=True) if use_mlflow else nullcontext():
             metrics = evaluator.run_inference(model, dataset, "Quantized (4-bit NF4)")
             if use_mlflow:
-                mlflow.log_metrics({
-                    "f1_score": metrics["F1 Score"],
-                    "exact_match": metrics["Exact Match (EM)"],
-                    "avg_latency": metrics["Avg Latency (tok/s)"],
-                    "peak_vram_gb": metrics["Peak VRAM (GB)"],
-                    "model_size_gb": metrics["Model Size (GB)"]
-                })
+                mlflow.log_metrics({k: v for k, v in metrics.items() if isinstance(v, (int, float))})
             results.append(metrics)
 
         if cfg.paths.get("export_models", False):
@@ -234,18 +232,12 @@ def main() -> None:
         optimizer = ModelOptimizer(cfg)
         model = optimizer.load_baseline()
         model = optimizer.apply_pruning(model, dataset=dataset)
-        evaluator = Evaluator(cfg, optimizer.tokenizer)
+        evaluator = Evaluator(cfg, optimizer.tokenizer, handler)
         
         with mlflow.start_run(run_name="Pruned_Unstructured", nested=True) if use_mlflow else nullcontext():
             metrics = evaluator.run_inference(model, dataset, "Pruned (Unstructured)")
             if use_mlflow:
-                mlflow.log_metrics({
-                    "f1_score": metrics["F1 Score"],
-                    "exact_match": metrics["Exact Match (EM)"],
-                    "avg_latency": metrics["Avg Latency (tok/s)"],
-                    "peak_vram_gb": metrics["Peak VRAM (GB)"],
-                    "model_size_gb": metrics["Model Size (GB)"]
-                })
+                mlflow.log_metrics({k: v for k, v in metrics.items() if isinstance(v, (int, float))})
             results.append(metrics)
 
         if cfg.paths.get("export_models", False):
